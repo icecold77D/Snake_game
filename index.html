@@ -1,1 +1,87 @@
 
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#08111f">
+<title>貪吃蛇 · Snake</title>
+<style>
+:root{color-scheme:dark;--bg:#08111f;--panel:#101d30;--line:#263b5b;--green:#7ee33f;--muted:#9aaac2;--red:#ff5364}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at top,#132744 0,#08111f 60%);color:#eef5ff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;padding:18px}
+main{max-width:900px;margin:auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+h1{font-size:clamp(25px,5vw,38px);margin:0;letter-spacing:2px}
+.subtitle{color:var(--muted);font-size:14px;margin-top:5px}
+button{border:1px solid #45638d;background:#1a2e4d;color:#fff;border-radius:12px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation}
+button:active{transform:scale(.97)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:14px;align-items:start}
+.board-wrap,.panel{background:linear-gradient(145deg,#101d30,#0b1524);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:0 10px 30px #0003}
+canvas{display:block;width:100%;height:auto;aspect-ratio:1/1;border-radius:10px;background:#07101c;touch-action:none}
+.side{display:grid;gap:14px}
+.scores{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.scorebox{background:#081321;border:1px solid #20334e;border-radius:12px;padding:12px;text-align:center}
+.scorebox span{display:block;color:var(--muted);font-size:13px}.scorebox strong{display:block;font-size:32px;color:var(--green);margin-top:4px}.scorebox:last-child strong{color:#ffd45e}
+.panel h2{font-size:16px;margin:0 0 12px}
+.status{font-size:13px;color:var(--muted);line-height:1.6;min-height:40px}
+.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-width:190px;margin:10px auto 0}
+.controls button{padding:12px 0;font-size:21px;min-height:46px}
+.controls .empty{visibility:hidden}
+.hint{color:var(--muted);font-size:12px;line-height:1.7}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{flex:1}
+footer{text-align:center;color:#72839d;font-size:12px;margin:14px 0}
+@media(max-width:680px){body{padding:12px}.layout{grid-template-columns:1fr}.side{grid-template-columns:1fr 1fr}.side .panel:first-child{grid-column:1/-1}.board-wrap{padding:8px}header{align-items:flex-start}.subtitle{max-width:230px}.actions button{font-size:13px;padding:10px 8px}}
+@media(max-width:390px){.side{grid-template-columns:1fr}.side .panel:first-child{grid-column:auto}}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>🐍 貪吃蛇</h1><div class="subtitle">吃到食物、讓蛇變長，挑戰你的最高分！</div></div><button id="restart">↻ 重新開始</button></header>
+<div class="layout">
+<section class="board-wrap"><canvas id="game" width="600" height="600" aria-label="貪吃蛇遊戲區"></canvas></section>
+<aside class="side">
+<section class="panel scores"><div class="scorebox"><span>本局分數</span><strong id="score">0</strong></div><div class="scorebox"><span>最高分</span><strong id="best">0</strong></div></section>
+<section class="panel"><h2>操作方式</h2><div class="status" id="status">按方向鍵或下方按鈕開始遊戲。</div>
+<div class="controls">
+<span class="empty"></span><button data-dir="up" aria-label="向上">↑</button><span class="empty"></span>
+<button data-dir="left" aria-label="向左">←</button><button id="pause">Ⅱ</button><button data-dir="right" aria-label="向右">→</button>
+<span class="empty"></span><button data-dir="down" aria-label="向下">↓</button><span class="empty"></span>
+</div></section>
+<section class="panel"><h2>遊戲規則</h2><div class="hint">🍎 吃到食物：分數 +10，蛇身變長<br>🧱 撞到牆壁：遊戲結束<br>🐍 撞到自己的身體：遊戲結束<br><br>小技巧：手機可使用方向按鈕，也可以在遊戲區滑動控制。</div><div class="actions" style="margin-top:12px"><button id="start">開始遊戲</button><button id="sound" aria-pressed="false">音效：關</button></div></section>
+</aside></div>
+<footer>單一 HTML 檔案 · 不需登入、不需安裝 · 可離線遊玩</footer>
+</main>
+<script>
+(() => {
+ const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+ const N=24, cell=canvas.width/N;
+ const scoreEl=document.getElementById('score'),bestEl=document.getElementById('best'),statusEl=document.getElementById('status');
+ let snake,food,dir,nextDir,score,best=0,running=false,over=false,paused=false,timer=null,soundOn=false,audio=null;
+ try{best=Number(localStorage.getItem('snakeBest')||0)}catch(e){}
+ bestEl.textContent=best;
+ function randomFood(){let p;do{p={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)}}while(snake.some(s=>s.x===p.x&&s.y===p.y));return p}
+ function reset(){clearInterval(timer);snake=[{x:8,y:12},{x:7,y:12},{x:6,y:12}];dir={x:1,y:0};nextDir={x:1,y:0};score=0;food=randomFood();running=false;over=false;paused=false;scoreEl.textContent=score;document.getElementById('pause').textContent='Ⅱ';statusEl.textContent='按方向鍵或「開始遊戲」開始。';draw();overlay('準備好了嗎？','按「開始遊戲」開始')}
+ function start(){if(over)reset();if(running&&!paused)return;running=true;paused=false;statusEl.textContent='遊戲進行中！吃到 🍎 得 10 分。';document.getElementById('pause').textContent='Ⅱ';clearInterval(timer);timer=setInterval(tick,115);draw()}
+ function tick(){if(!running||paused)return;dir=nextDir;const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(head.x<0||head.x>=N||head.y<0||head.y>=N||snake.some((s,i)=>i<snake.length-1&&s.x===head.x&&s.y===head.y)){end();return}snake.unshift(head);if(head.x===food.x&&head.y===food.y){score+=10;scoreEl.textContent=score;if(score>best){best=score;bestEl.textContent=best;try{localStorage.setItem('snakeBest',best)}catch(e){}}beep();food=randomFood()}else snake.pop();draw()}
+ function end(){running=false;over=true;clearInterval(timer);statusEl.textContent='遊戲結束！分數：'+score+'。按重新開始再挑戰一次。';draw();overlay('遊戲結束',`本局得分：${score}`)}
+ function setDir(d){if(!running&&!over)start();if(over)return;const map={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};const v=map[d];if(v.x!==-dir.x||v.y!==-dir.y)nextDir=v}
+ function draw(){ctx.clearRect(0,0,600,600);ctx.fillStyle='#07101c';ctx.fillRect(0,0,600,600);ctx.strokeStyle='rgba(69,100,143,.22)';ctx.lineWidth=1;for(let i=0;i<=N;i++){ctx.beginPath();ctx.moveTo(i*cell,0);ctx.lineTo(i*cell,600);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*cell);ctx.lineTo(600,i*cell);ctx.stroke()}
+  // food
+  const fx=(food.x+.5)*cell,fy=(food.y+.52)*cell;ctx.fillStyle='#ff5364';ctx.beginPath();ctx.arc(fx,fy,cell*.34,0,Math.PI*2);ctx.fill();ctx.fillStyle='#7ee33f';ctx.beginPath();ctx.ellipse(fx+5,fy-cell*.32,5,3,-.5,0,Math.PI*2);ctx.fill();
+  snake.forEach((s,i)=>{const x=s.x*cell+2,y=s.y*cell+2;ctx.fillStyle=i===0?'#c5ff8a':'#7ee33f';roundRect(ctx,x,y,cell-4,cell-4,6);ctx.fill();if(i===0){ctx.fillStyle='#102018';let ex=x+(dir.x===-1?5:dir.x===1?cell-10:dir.y===-1?5:cell-10),ey=y+(dir.y===-1?5:dir.y===1?cell-10:dir.x===-1?5:cell-10);ctx.beginPath();ctx.arc(ex,ey,2.2,0,Math.PI*2);ctx.arc(ex+(dir.y===0?0:5),ey+(dir.x===0?0:5),2.2,0,Math.PI*2);ctx.fill()}});
+  if(paused)overlay('已暫停','按 Ⅱ 繼續');}
+ function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+ function overlay(title,sub){ctx.fillStyle='rgba(3,9,18,.68)';ctx.fillRect(0,0,600,600);ctx.textAlign='center';ctx.fillStyle='#f2f7ff';ctx.font='bold 34px system-ui';ctx.fillText(title,300,278);ctx.fillStyle='#a9bad2';ctx.font='20px system-ui';ctx.fillText(sub,300,318)}
+ function beep(){if(!soundOn)return;try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();const o=audio.createOscillator(),g=audio.createGain();o.connect(g);g.connect(audio.destination);o.frequency.value=660;g.gain.value=.045;o.start();o.stop(audio.currentTime+.07)}catch(e){}}
+ document.getElementById('restart').onclick=reset;document.getElementById('start').onclick=start;
+ document.getElementById('pause').onclick=()=>{if(!running&&!paused){start();return}paused=!paused;document.getElementById('pause').textContent=paused?'▶':'Ⅱ';statusEl.textContent=paused?'已暫停。按 ▶ 繼續。':'遊戲進行中！';draw()};
+ document.getElementById('sound').onclick=e=>{soundOn=!soundOn;e.currentTarget.textContent='音效：'+(soundOn?'開':'關');e.currentTarget.setAttribute('aria-pressed',String(soundOn));if(soundOn)beep()};
+ document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('click',()=>setDir(b.dataset.dir)));
+ document.addEventListener('keydown',e=>{const keys={ArrowUp:'up',w:'up',W:'up',ArrowDown:'down',s:'down',S:'down',ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right'};if(keys[e.key]){e.preventDefault();setDir(keys[e.key])}if(e.code==='Space'){e.preventDefault();if(!running||paused)start();else{paused=true;document.getElementById('pause').textContent='▶';draw()}}if(e.key==='Enter'&&over)start()});
+ let touchX=0,touchY=0;canvas.addEventListener('touchstart',e=>{touchX=e.changedTouches[0].clientX;touchY=e.changedTouches[0].clientY},{passive:true});canvas.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-touchX,dy=e.changedTouches[0].clientY-touchY;if(Math.max(Math.abs(dx),Math.abs(dy))>20)setDir(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'))},{passive:true});
+ reset();
+})();
+</script>
+</body>
+</html>
